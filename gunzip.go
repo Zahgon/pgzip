@@ -15,10 +15,8 @@
 package pgzip
 
 import (
-	"bufio"
 	"errors"
 	"hash"
-	"hash/crc32"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -38,12 +36,7 @@ const (
 	flagComment = 1 << 4
 )
 
-func makeReader(r io.Reader) flate.Reader {
-	if rr, ok := r.(flate.Reader); ok {
-		return rr
-	}
-	return bufio.NewReader(r)
-}
+func makeReader(r io.Reader) flate.Reader { _ = "STUB: not implemented"; return *new(flate.Reader) }
 
 var (
 	// ErrChecksum is returned when reading GZIP data that has an invalid checksum.
@@ -110,23 +103,7 @@ type read struct {
 // NewReader creates a new Reader reading the given reader.
 // The implementation buffers input and may read more data than necessary from r.
 // It is the caller's responsibility to call Close on the Reader when done.
-func NewReader(r io.Reader) (*Reader, error) {
-	z := new(Reader)
-	z.blocks = defaultBlocks
-	z.blockSize = defaultBlockSize
-	z.r = makeReader(r)
-	z.digest = crc32.NewIEEE()
-	z.multistream.Store(true)
-	z.blockPool = make(chan []byte, z.blocks)
-	for i := 0; i < z.blocks; i++ {
-		z.blockPool <- make([]byte, z.blockSize)
-	}
-	if err := z.readHeader(true); err != nil {
-		return nil, err
-	}
-
-	return z, nil
-}
+func NewReader(r io.Reader) (*Reader, error) { _ = "STUB: not implemented"; return nil, nil }
 
 // NewReaderN creates a new Reader reading the given reader.
 // The implementation buffers input and may read more data than necessary from r.
@@ -139,61 +116,18 @@ func NewReader(r io.Reader) (*Reader, error) {
 // meaning up to 16 blocks of maximum 250000 bytes will be
 // prefetched.
 func NewReaderN(r io.Reader, blockSize, blocks int) (*Reader, error) {
-	z := new(Reader)
-	z.blocks = blocks
-	z.blockSize = blockSize
-	z.r = makeReader(r)
-	z.digest = crc32.NewIEEE()
-	z.multistream.Store(true)
-
-	// Account for too small values
-	if z.blocks <= 0 {
-		z.blocks = defaultBlocks
-	}
-	if z.blockSize <= 512 {
-		z.blockSize = defaultBlockSize
-	}
-	z.blockPool = make(chan []byte, z.blocks)
-	for i := 0; i < z.blocks; i++ {
-		z.blockPool <- make([]byte, z.blockSize)
-	}
-	if err := z.readHeader(true); err != nil {
-		return nil, err
-	}
-	return z, nil
+	_ = "STUB: not implemented"
+	return nil, nil
 }
+
+// Account for too small values
 
 // Reset discards the Reader z's state and makes it equivalent to the
 // result of its original state from NewReader, but reading from r instead.
 // This permits reusing a Reader rather than allocating a new one.
-func (z *Reader) Reset(r io.Reader) error {
-	z.killReadAhead()
-	z.r = makeReader(r)
-	z.digest = crc32.NewIEEE()
-	z.size = 0
-	z.err = nil
-	z.multistream.Store(true)
-	z.readAheadStarted.Store(false)
+func (z *Reader) Reset(r io.Reader) error { _ = "STUB: not implemented"; return nil }
 
-	// Account for uninitialized values
-	if z.blocks <= 0 {
-		z.blocks = defaultBlocks
-	}
-	if z.blockSize <= 512 {
-		z.blockSize = defaultBlockSize
-	}
-
-	if z.blockPool == nil {
-		z.blockPool = make(chan []byte, z.blocks)
-		for i := 0; i < z.blocks; i++ {
-			z.blockPool <- make([]byte, z.blockSize)
-		}
-	}
-	if err := z.readHeader(true); err != nil {
-		return err
-	}
-	return nil
-}
+// Account for uninitialized values
 
 // Multistream controls whether the reader supports multistream files.
 //
@@ -211,369 +145,68 @@ func (z *Reader) Reset(r io.Reader) error {
 // it will be left positioned just after the gzip stream.
 // To start the next stream, call z.Reset(r) followed by z.Multistream(false).
 // If there is no next stream, z.Reset(r) will return io.EOF.
-func (z *Reader) Multistream(ok bool) {
-	z.multistream.Store(ok)
-}
+func (z *Reader) Multistream(ok bool) { _ = "STUB: not implemented"; return }
 
 // GZIP (RFC 1952) is little-endian, unlike ZLIB (RFC 1950).
-func get4(p []byte) uint32 {
-	return uint32(p[0]) | uint32(p[1])<<8 | uint32(p[2])<<16 | uint32(p[3])<<24
-}
+func get4(p []byte) uint32 { _ = "STUB: not implemented"; return 0 }
 
-func (z *Reader) readString() (string, error) {
-	var err error
-	needconv := false
-	for i := 0; ; i++ {
-		if i >= len(z.buf) {
-			return "", ErrHeader
-		}
-		z.buf[i], err = z.r.ReadByte()
-		if err != nil {
-			return "", err
-		}
-		if z.buf[i] > 0x7f {
-			needconv = true
-		}
-		if z.buf[i] == 0 {
-			// GZIP (RFC 1952) specifies that strings are NUL-terminated ISO 8859-1 (Latin-1).
-			if needconv {
-				s := make([]rune, 0, i)
-				for _, v := range z.buf[0:i] {
-					s = append(s, rune(v))
-				}
-				return string(s), nil
-			}
-			return string(z.buf[0:i]), nil
-		}
-	}
-}
+func (z *Reader) readString() (string, error) { _ = "STUB: not implemented"; return "", nil }
 
-func (z *Reader) read2() (uint32, error) {
-	_, err := io.ReadFull(z.r, z.buf[0:2])
-	if err != nil {
-		return 0, err
-	}
-	return uint32(z.buf[0]) | uint32(z.buf[1])<<8, nil
-}
+// GZIP (RFC 1952) specifies that strings are NUL-terminated ISO 8859-1 (Latin-1).
 
-func (z *Reader) readHeader(save bool) error {
-	_, err := io.ReadFull(z.r, z.buf[0:10])
-	if err != nil {
-		return err
-	}
-	if z.buf[0] != gzipID1 || z.buf[1] != gzipID2 || z.buf[2] != gzipDeflate {
-		return ErrHeader
-	}
-	z.flg = z.buf[3]
-	z.size = 0
-	if save {
-		z.ModTime = time.Unix(int64(get4(z.buf[4:8])), 0)
-		// z.buf[8] is xfl, ignored
-		z.OS = z.buf[9]
-	}
-	z.digest.Reset()
-	z.digest.Write(z.buf[0:10])
+func (z *Reader) read2() (uint32, error) { _ = "STUB: not implemented"; return 0, nil }
 
-	if z.flg&flagExtra != 0 {
-		n, err := z.read2()
-		if err != nil {
-			return err
-		}
-		data := make([]byte, n)
-		if _, err = io.ReadFull(z.r, data); err != nil {
-			return err
-		}
-		if save {
-			z.Extra = data
-		}
-	}
+func (z *Reader) readHeader(save bool) error { _ = "STUB: not implemented"; return nil }
 
-	var s string
-	if z.flg&flagName != 0 {
-		if s, err = z.readString(); err != nil {
-			return err
-		}
-		if save {
-			z.Name = s
-		}
-	}
+// z.buf[8] is xfl, ignored
 
-	if z.flg&flagComment != 0 {
-		if s, err = z.readString(); err != nil {
-			return err
-		}
-		if save {
-			z.Comment = s
-		}
-	}
+func (z *Reader) killReadAhead() error { _ = "STUB: not implemented"; return nil }
 
-	if z.flg&flagHdrCrc != 0 {
-		n, err := z.read2()
-		if err != nil {
-			return err
-		}
-		sum := z.digest.Sum32() & 0xFFFF
-		if n != sum {
-			return ErrHeader
-		}
-	}
+// Wait for decompressor to be closed and return error, if any.
 
-	z.digest.Reset()
-	if r, ok := z.decompressor.(flate.Resetter); ok {
-		if err := r.Reset(z.r, nil); err != nil {
-			return err
-		}
-	} else {
-		z.decompressor = flate.NewReader(z.r)
-	}
-	return nil
-}
-
-func (z *Reader) killReadAhead() error {
-	if !z.readAheadStarted.Load() {
-		return nil
-	}
-
-	z.mu.Lock()
-	defer z.mu.Unlock()
-	if z.closeReader != nil {
-		close(z.closeReader)
-	}
-
-	// Wait for decompressor to be closed and return error, if any.
-	e, ok := <-z.closeErr
-
-	for blk := range z.readAhead {
-		if blk.b != nil {
-			z.blockPool <- blk.b
-		}
-	}
-	if cap(z.current) > 0 {
-		z.blockPool <- z.current
-		z.current = nil
-	}
-	if !ok {
-		// Channel is closed, so if there was any error it has already been returned.
-		return nil
-	}
-	return e
-}
+// Channel is closed, so if there was any error it has already been returned.
 
 // Starts readahead.
 // Will return on error (including io.EOF)
 // or when z.closeReader is closed.
-func (z *Reader) doReadAhead() {
+func (z *Reader) doReadAhead() { _ = "STUB: not implemented"; return }
 
-	if z.blocks <= 0 {
-		z.blocks = defaultBlocks
-	}
-	if z.blockSize <= 512 {
-		z.blockSize = defaultBlockSize
-	}
-	ra := make(chan read, z.blocks)
-	z.readAhead = ra
-	closeReader := make(chan struct{}, 0)
-	z.closeReader = closeReader
-	z.lastBlock = false
-	closeErr := make(chan error, 1)
-	z.closeErr = closeErr
-	z.size = 0
-	z.roff = 0
-	z.current = nil
-	decomp := z.decompressor
+// We hold a local reference to digest, since
+// it way be changed by reset.
 
-	go func() {
-		var wg sync.WaitGroup
-		defer func() {
-			wg.Wait()
-			closeErr <- decomp.Close()
-			close(closeErr)
-			close(ra)
-		}()
+// Try to fill the buffer
 
-		// We hold a local reference to digest, since
-		// it way be changed by reset.
-		digest := z.digest
-		for {
-			var buf []byte
-			select {
-			case buf = <-z.blockPool:
-			case <-closeReader:
-				return
-			}
-			buf = buf[0:z.blockSize]
-			// Try to fill the buffer
-			n, err := io.ReadFull(decomp, buf)
-			if err == io.ErrUnexpectedEOF {
-				if n > 0 {
-					err = nil
-				} else {
-					// If we got zero bytes, we need to establish if
-					// we reached end of stream or truncated stream.
-					_, err = decomp.Read([]byte{})
-					if err == io.EOF {
-						err = nil
-					}
-				}
-			}
-			if n < len(buf) {
-				buf = buf[0:n]
-			}
-			wg.Wait()
-			wg.Add(1)
-			go func() {
-				digest.Write(buf)
-				wg.Done()
-			}()
-			z.size += uint32(n)
+// If we got zero bytes, we need to establish if
+// we reached end of stream or truncated stream.
 
-			// If we return any error, out digest must be ready
-			if err != nil {
-				wg.Wait()
-			}
-			if err == io.EOF {
-				// Finished file; check checksum + size.
-				if _, err = io.ReadFull(z.r, z.buf[0:8]); err == nil {
-					crc32, isize := get4(z.buf[0:4]), get4(z.buf[4:8])
-					sum := z.digest.Sum32()
-					if sum != crc32 || isize != z.size {
-						err = ErrChecksum
-					} else {
-						// File is ok; should we attempt reading one more?
-						if !z.multistream.Load() {
-							err = io.EOF
-						} else {
-							err = z.readHeader(false)
-						}
-					}
-				}
-			}
-			if err == nil && len(buf) == 0 {
-				z.blockPool <- buf
-				continue
-			}
-			select {
-			case z.readAhead <- read{b: buf, err: err}:
-			case <-closeReader:
-				// Sent on close, we don't care about the next results
-				z.blockPool <- buf
-				return
-			}
-			if err != nil {
-				return
-			}
-		}
-	}()
-}
+// If we return any error, out digest must be ready
 
-func (z *Reader) Read(p []byte) (n int, err error) {
-	if z.err != nil {
-		return 0, z.err
-	}
-	if len(p) == 0 {
-		return 0, nil
-	}
+// Finished file; check checksum + size.
 
-	if z.readAheadStarted.CompareAndSwap(false, true) {
-		z.doReadAhead()
-	}
+// File is ok; should we attempt reading one more?
 
-	for {
-		if len(z.current) == 0 && !z.lastBlock {
-			read := <-z.readAhead
-			if read.err != nil {
-				// If not nil, the reader will have exited
-				z.closeReader = nil
+// Sent on close, we don't care about the next results
 
-				if read.err != io.EOF {
-					if cap(read.b) > 0 {
-						z.blockPool <- read.b
-					}
-					z.err = read.err
-					return
-				}
-				if read.err == io.EOF {
-					z.lastBlock = true
-					err = nil
-				}
-			}
-			z.current = read.b
-			z.roff = 0
-		}
-		avail := z.current[z.roff:]
-		if len(p) >= len(avail) {
-			// If len(p) >= len(current), return all content of current
-			n = copy(p, avail)
-			z.blockPool <- z.current
-			z.current = nil
-			if z.lastBlock {
-				err = io.EOF
-				break
-			}
-		} else {
-			// We copy as much as there is space for
-			n = copy(p, avail)
-			z.roff += n
-		}
-		return
-	}
-	return n, err
-}
+func (z *Reader) Read(p []byte) (n int, err error) { _ = "STUB: not implemented"; return 0, nil }
+
+// If not nil, the reader will have exited
+
+// If len(p) >= len(current), return all content of current
+
+// We copy as much as there is space for
 
 func (z *Reader) WriteTo(w io.Writer) (n int64, err error) {
-	if z.readAheadStarted.CompareAndSwap(false, true) {
-		z.doReadAhead()
-	}
-
-	total := int64(0)
-	avail := z.current[z.roff:]
-	if len(avail) != 0 {
-		n, err := w.Write(avail)
-		if n != len(avail) {
-			return total, io.ErrShortWrite
-		}
-		total += int64(n)
-		if err != nil {
-			return total, err
-		}
-		z.blockPool <- z.current
-		z.current = nil
-	}
-	for z.err == nil && !z.lastBlock {
-		// Read from input
-		read := <-z.readAhead
-		if read.err != nil {
-			// If not nil, the reader will have exited
-			z.closeReader = nil
-
-			if read.err != io.EOF {
-				if cap(read.b) > 0 {
-					z.blockPool <- read.b
-				}
-				z.err = read.err
-				return total, z.err
-			}
-			if read.err == io.EOF {
-				z.lastBlock = true
-				err = nil
-			}
-		}
-		// Write what we got
-		n, err := w.Write(read.b)
-		if n != len(read.b) {
-			return total, io.ErrShortWrite
-		}
-		total += int64(n)
-		if err != nil {
-			return total, err
-		}
-		// Put block back
-		z.blockPool <- read.b
-	}
-	return total, z.err
+	_ = "STUB: not implemented"
+	return 0, nil
 }
+
+// Read from input
+
+// If not nil, the reader will have exited
+
+// Write what we got
+
+// Put block back
 
 // Close closes the Reader. It does not close the underlying io.Reader.
-func (z *Reader) Close() error {
-	return z.killReadAhead()
-}
+func (z *Reader) Close() error { _ = "STUB: not implemented"; return nil }
